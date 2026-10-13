@@ -13,6 +13,8 @@ player while an ad is playing.
 - Hide banner ads: masthead, sidebar, in-feed and in-player overlay ads
 - Mute during ads: silences the player while an ad plays, then restores
 - `MutationObserver` + polling for dynamically injected ads (SPA friendly)
+- Preventive ad removal: ad data is stripped from the player payloads before
+  the player reads them, so no ad slot is ever created (avoids anti-adblock)
 - Global on/off switch and per-feature toggles
 - Block statistics and toolbar badge
 - Works on watch pages, Shorts, home feed, search and channel pages
@@ -63,6 +65,18 @@ style sheet hides ad containers on the page while a timer and a
 `MutationObserver` detect `.ad-showing`, click skip buttons and fast-forward
 the player. Settings are storage-backed in `utils/settings.ts` and shared by the
 popup, options page and background script.
+
+### Anti-adblock
+
+Reacting to ads after they render is what YouTube's anti-adblock system detects.
+`entrypoints/youtube-main.content.ts` runs in the page's **MAIN world** at
+`document_start` and strips ad and enforcement fields (`adPlacements`,
+`playerAds`, `adSlots`, `enforcementMessageViewModel`, ...) from YouTube's own
+API payloads *before* the player reads them, by patching `JSON.parse`,
+`Response.prototype.json` and the `ytInitialPlayerResponse` / `ytInitialData`
+setters. With no ad slot ever created there is nothing to detect. As a safety
+net, the isolated content script also removes the enforcement dialog
+(`ytd-enforcement-message-view-model`) and its overlay backdrop.
 
 ## Notes
 

@@ -54,19 +54,36 @@ const SKIP_BUTTON_SELECTORS = [
   'button.ytp-ad-skip-button-modern',
 ].join(',');
 
+/** YouTube's "ad blockers are not allowed" enforcement dialog. */
+const ENFORCEMENT_SELECTORS = [
+  'ytd-enforcement-message-view-model',
+  'tp-yt-paper-dialog:has(ytd-enforcement-message-view-model)',
+  'tp-yt-paper-dialog:has(yt-confirm-dialog-renderer[class*="enforce"])',
+  'ytd-popup-container:has(ytd-enforcement-message-view-model)',
+  'yt-confirm-dialog-renderer[class*="enforce"]',
+].join(',');
+
 const STYLE_ID = 'ytad-blocker-style';
 const TICK_MS = 250;
 
 function buildStyle(): string {
   return `
     ${PAGE_AD_SELECTORS},
-    ${PLAYER_AD_SELECTORS} {
+    ${PLAYER_AD_SELECTORS},
+    ${ENFORCEMENT_SELECTORS} {
       display: none !important;
       visibility: hidden !important;
       pointer-events: none !important;
     }
+    html:has(ytd-enforcement-message-view-model) tp-yt-iron-overlay-backdrop,
+    html:has(yt-confirm-dialog-renderer[class*='enforce']) tp-yt-iron-overlay-backdrop {
+      display: none !important;
+      opacity: 0 !important;
+      pointer-events: none !important;
+    }
   `;
 }
+
 
 export default defineContentScript({
   matches: ['*://*.youtube.com/*', '*://*.youtube-nocookie.com/*'],
@@ -196,10 +213,43 @@ export default defineContentScript({
       });
     }
 
+    /**
+     * Remove YouTube's anti-adblock enforcement dialog and the overlay backdrop
+     * it uses to block the page. Earlier layers strip the ad payload before the
+     * player reads it, so this is a safety net for the rare case the dialog
+     * still appears.
+     */
+    function purgeEnforcement() {
+      if (!state.enabled) return;
+      const dialogs = document.querySelectorAll(ENFORCEMENT_SELECTORS);
+      if (dialogs.length === 0) return;
+
+      dialogs.forEach((el) => {
+        const target =
+          el.closest<HTMLElement>('tp-yt-paper-dialog') ??
+          (el as HTMLElement);
+        try {
+          (target as unknown as { cancel?: () => void }).cancel?.();
+          (target as unknown as { close?: () => void }).close?.();
+        } catch {
+          /* ignore element method errors */
+        }
+        target.remove();
+      });
+
+      document
+        .querySelectorAll('tp-yt-iron-overlay-backdrop')
+        .forEach((el) => el.remove());
+
+      document.body?.style.removeProperty('overflow');
+      document.documentElement.style.removeProperty('overflow');
+    }
+
     function tick() {
       hidePageAds(document);
       handlePlayerOverlays();
       handleAdState();
+      purgeEnforcement();
     }
 
     function start() {
